@@ -7,8 +7,11 @@
 #include "read.c"
 #include <math.h>
 #include <time.h>
- 
 
+enum { STATE_A, STATE_B } state = STATE_A;
+pthread_cond_t      condA  = PTHREAD_COND_INITIALIZER;
+pthread_cond_t      condB  = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t     mutex = PTHREAD_MUTEX_INITIALIZER;
 int contadorCarosEO=0;
 int contadorCarosOE=0;
 int direccion;
@@ -72,7 +75,9 @@ void bloquearPuente();
 void desbloquearPuente();
 //funcion que crea los carros como hilos
 void * crearCarro(void * p);
-
+void* semEO(void *p);
+void * semOE(void * p);
+char * dir(int dir);
 int main(){
 FILE* fp;
 char* filename="config.txt";
@@ -81,11 +86,11 @@ arrayo_e=(int*)malloc(sizeof(int)*cantidadAmbulanciasOeste());
 arraye_o=(int*)malloc(sizeof(int)*cantidadAmbulanciasEste());
 crearpuente();
 
+pthread_create(&OE, NULL,semEO , NULL);
 
-pthread_create(&OE, NULL,crearCarro , NULL);
-//pthread_create(&EO, NULL, CCEO, NULL);
+pthread_create(&EO, NULL, semOE, NULL);
 pthread_join(OE, NULL);
-//pthread_join(EO, NULL);
+pthread_join(EO, NULL);
 
 
 
@@ -147,10 +152,10 @@ for(int i=0;i<cantidadAmbulancias; i++){
         }
 }     
 int velocidad = calculavelocidad(arreglo[14],arreglo[15]);
-if(esAmbulancia)
-printf("Soy una ambulanciaOE y vengo a esta velocidad:%d \n", velocidad);
-else
-printf("Soy un CarroOE y vengo a esta velocidad:%d \n",velocidad);
+// if(esAmbulancia)
+// printf("Soy una ambulanciaOE y vengo a esta velocidad:%d \n", velocidad);
+// else
+// printf("Soy un CarroOE y vengo a esta velocidad:%d \n",velocidad);
 }
 
 
@@ -238,7 +243,7 @@ void bloquearPuente(){
                if(num!=0){
                 pthread_mutex_unlock(&puente[i]);
                 pthread_mutex_lock(&puente[i]);
-                printf("Bloqueando el puente\n");
+           
                }
         }
 }
@@ -291,6 +296,100 @@ void* crearCarro(void *p)
         }
 }
 
+
+void * semaforo(void * p){
+   int max=arreglo[3]+arreglo[11];
+        for(int i=1; i<=max;i++){
+         int aleatorio;
+         if(contadorCarosEO==arreglo[3]&&contadorCarosOE==arreglo[11])
+         break;
+         else if(contadorCarosEO==arreglo[3]&&contadorCarosOE<arreglo[11])
+         aleatorio=1;
+         else if(contadorCarosOE==arreglo[11]&&contadorCarosEO<arreglo[3])
+         aleatorio=0;
+         else
+         aleatorio=(int)rand()%2 ;
+         if(aleatorio==0)
+         contadorCarosEO++;
+         else
+         contadorCarosOE++;
+                            
+        if(aleatorio==0){
+        printf("Carro entrando al puente en direccion %s\n",dir(0));
+        LlegaApuente(aleatorio);
+        pthread_t carro;
+        pthread_create(&carro, NULL, carroEO, NULL);
+        salePuente(aleatorio);
+         printf("El carro ha pasado el puente\n");
+         
+        }
+        else{
+        printf("Carro entrando al puente en direccion %s\n",dir(1));
+        LlegaApuente(aleatorio);
+        pthread_t carro;
+        pthread_create(&carro, NULL, carroOE, NULL);
+        salePuente(aleatorio);
+         printf("El carro ha pasado el puente\n");
+        }
+        }      
+}
+void* semEO(void *p){
+
+//         struct timespec tim, tim2;
+//    tim.tv_sec = 0;
+//    tim.tv_nsec = 60000000L;     
+  bloquearPuente();
+  for(int i=0;i<arreglo[0];i++){
+  while (state != STATE_A){
+          printf("Cambiando el semaforo EO\n");
+            pthread_cond_wait(&condA, &puente[i]);
+            sleep(6);
+            }
+  }
+      
+        desbloquearPuente();
+        for(int i=0; i<arreglo[3];i++){
+      // printf("Carro entrando al puente en direccion %s\n",dir(0));
+        LlegaApuente(0);
+        pthread_t carro;
+        pthread_create(&carro, NULL, carroEO, NULL);
+        salePuente(0);
+         //printf("El carro ha pasado el puente\n");
+        }
+      
+        bloquearPuente();
+        state = STATE_B;
+        pthread_cond_broadcast(&condB);
+        desbloquearPuente();
+}
+void * semOE(void * p){
+//          struct timespec tim, tim2;
+//    tim.tv_sec = 0;
+//    tim.tv_nsec = 60000000L;
+        bloquearPuente();
+        for(int i=0; i<arreglo[0]; i++){
+        while (state != STATE_B){
+          printf("Cambiando el semaforo OE\n");
+            pthread_cond_wait(&condB, &puente[i]);
+                sleep(6000);
+            }
+        }
+        desbloquearPuente();
+
+        for(int i=0;i<arreglo[11];i++){
+      //printf("Carro entrando al puente en direccion %s\n",dir(1));
+        LlegaApuente(1);
+        pthread_t carro;
+        pthread_create(&carro, NULL, carroOE, NULL);
+        salePuente(1);
+         //printf("El carro ha pasado el puente\n");
+        }
+        bloquearPuente();
+        state = STATE_A;
+        pthread_cond_signal(&condA);
+     desbloquearPuente();
+}
+
 char * dir(int dir){
         char * a;
         if(dir==0)
@@ -299,12 +398,4 @@ char * dir(int dir){
         return a="OE";
         
         
-
 }
-
-void * semaforo(void * p){
-        
-}
-
-
-
